@@ -117,4 +117,4 @@ jobs:
           artifacts/SapPriceUpdater-Windows/SapPriceUpdater-Windows.zip
           artifacts/SapPriceUpdater-MacOS/SapPriceUpdater-MacOS.zip
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
