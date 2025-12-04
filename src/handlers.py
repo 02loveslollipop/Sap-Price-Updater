@@ -5,7 +5,7 @@ All data transformation logic is separated here for testability.
 import pandas as pd
 import numpy as np
 import re
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 
 def normalize_article_code(value) -> str:
@@ -75,16 +75,38 @@ def normalize_code_column(series: pd.Series) -> pd.Series:
     return series.apply(normalize_article_code)
 
 
-def load_cost_file(file_path: str, sheet_name: str = 'COSTO PROD') -> pd.DataFrame:
+def get_excel_columns(file_path: str, sheet_name: str = None) -> List[str]:
+    """
+    Get the column names from an Excel file without loading all data.
+    
+    Args:
+        file_path: Path to the Excel file
+        sheet_name: Name of the sheet (optional, uses first sheet if not specified)
+    
+    Returns:
+        List of column names
+    """
+    if sheet_name:
+        df = pd.read_excel(file_path, sheet_name=sheet_name, nrows=0)
+    else:
+        df = pd.read_excel(file_path, nrows=0)
+    return list(df.columns)
+
+
+def load_cost_file(file_path: str, article_column: str = 'Artículo', 
+                   value_column: str = 'Manufactura FC', 
+                   sheet_name: str = 'COSTO PROD') -> Tuple[pd.DataFrame, str, str]:
     """
     Load the cost file and prepare it for processing.
     
     Args:
         file_path: Path to the Excel file
+        article_column: Name of the column containing article codes
+        value_column: Name of the column containing the value to extract
         sheet_name: Name of the sheet to load
     
     Returns:
-        DataFrame with normalized 'Artículo' column
+        Tuple of (DataFrame with normalized article column, article_column name, value_column name)
     
     Raises:
         ValueError: If required columns are missing
@@ -93,26 +115,27 @@ def load_cost_file(file_path: str, sheet_name: str = 'COSTO PROD') -> pd.DataFra
     df = pd.read_excel(file_path, sheet_name=sheet_name)
     
     # Validate required columns
-    if 'Artículo' not in df.columns:
-        raise ValueError("La columna 'Artículo' no se encontró en el archivo de costos.")
-    if 'Manufactura FC' not in df.columns:
-        raise ValueError("La columna 'Manufactura FC' no se encontró en el archivo de costos.")
+    if article_column not in df.columns:
+        raise ValueError(f"Column '{article_column}' not found in cost file.")
+    if value_column not in df.columns:
+        raise ValueError(f"Column '{value_column}' not found in cost file.")
     
     # Normalize the article code column
-    df['Artículo'] = normalize_code_column(df['Artículo'])
+    df[article_column] = normalize_code_column(df[article_column])
     
-    return df
+    return df, article_column, value_column
 
 
-def load_sap_file(file_path: str) -> pd.DataFrame:
+def load_sap_file(file_path: str, article_column: str = 'Número de artículo') -> Tuple[pd.DataFrame, str]:
     """
     Load the SAP file and prepare it for processing.
     
     Args:
         file_path: Path to the Excel file
+        article_column: Name of the column containing article codes
     
     Returns:
-        DataFrame with normalized 'Número de artículo' column
+        Tuple of (DataFrame with normalized article column, article_column name)
     
     Raises:
         ValueError: If required columns are missing
@@ -121,13 +144,13 @@ def load_sap_file(file_path: str) -> pd.DataFrame:
     df = pd.read_excel(file_path)
     
     # Validate required columns
-    if 'Número de artículo' not in df.columns:
-        raise ValueError("La columna 'Número de artículo' no se encontró en el archivo SAP.")
+    if article_column not in df.columns:
+        raise ValueError(f"Column '{article_column}' not found in SAP file.")
     
     # Normalize the article code column
-    df['Número de artículo'] = normalize_code_column(df['Número de artículo'])
+    df[article_column] = normalize_code_column(df[article_column])
     
-    return df
+    return df, article_column
 
 
 def parse_clipboard_data(clipboard_text: str) -> pd.DataFrame:
@@ -177,113 +200,144 @@ def parse_clipboard_data(clipboard_text: str) -> pd.DataFrame:
     return df
 
 
-def prepare_sap_from_clipboard(df: pd.DataFrame) -> pd.DataFrame:
+def prepare_sap_from_clipboard(df: pd.DataFrame, article_column: str = 'Número de artículo') -> Tuple[pd.DataFrame, str]:
     """
     Prepare a DataFrame from clipboard to be used as SAP data.
     Normalizes the article code column.
     
     Args:
         df: DataFrame parsed from clipboard
+        article_column: Name of the column containing article codes
     
     Returns:
-        DataFrame ready to be used as SAP data
+        Tuple of (DataFrame ready to be used as SAP data, article_column name)
     
     Raises:
         ValueError: If required column is missing
     """
-    if 'Número de artículo' not in df.columns:
-        raise ValueError("La columna 'Número de artículo' no se encontró en los datos pegados.")
+    if article_column not in df.columns:
+        raise ValueError(f"Column '{article_column}' not found in pasted data.")
     
     # Normalize the article code column
-    df['Número de artículo'] = normalize_code_column(df['Número de artículo'])
+    df[article_column] = normalize_code_column(df[article_column])
     
-    return df
+    return df, article_column
 
 
-def merge_data(df_sap: pd.DataFrame, df_cost: pd.DataFrame) -> pd.DataFrame:
+def merge_data(df_sap: pd.DataFrame, df_cost: pd.DataFrame,
+               sap_article_col: str = 'Número de artículo',
+               cost_article_col: str = 'Artículo',
+               value_col: str = 'Manufactura FC') -> Tuple[pd.DataFrame, str, str]:
     """
     Merge SAP data with Cost data, preserving SAP order.
     Uses left join to keep all SAP rows.
     
     Args:
-        df_sap: DataFrame with SAP data (must have 'Número de artículo' column)
-        df_cost: DataFrame with Cost data (must have 'Artículo' and 'Manufactura FC' columns)
+        df_sap: DataFrame with SAP data
+        df_cost: DataFrame with Cost data
+        sap_article_col: Name of the article column in SAP data
+        cost_article_col: Name of the article column in Cost data
+        value_col: Name of the value column to extract from Cost data
     
     Returns:
-        Merged DataFrame with SAP article numbers and matched Manufactura FC values
+        Tuple of (Merged DataFrame, sap_article_col name, value_col name)
     """
     # Ensure both columns are normalized strings before merging
     df_sap = df_sap.copy()
     df_cost = df_cost.copy()
     
-    df_sap['Número de artículo'] = normalize_code_column(df_sap['Número de artículo'])
-    df_cost['Artículo'] = normalize_code_column(df_cost['Artículo'])
+    df_sap[sap_article_col] = normalize_code_column(df_sap[sap_article_col])
+    df_cost[cost_article_col] = normalize_code_column(df_cost[cost_article_col])
+    
+    # Remove duplicate article codes from cost file (keep first occurrence)
+    # This prevents the merge from creating extra rows when cost file has duplicates
+    df_cost_unique = df_cost[[cost_article_col, value_col]].drop_duplicates(
+        subset=[cost_article_col], 
+        keep='first'
+    )
     
     df_merged = pd.merge(
         df_sap,
-        df_cost[['Artículo', 'Manufactura FC']],
-        left_on='Número de artículo',
-        right_on='Artículo',
+        df_cost_unique,
+        left_on=sap_article_col,
+        right_on=cost_article_col,
         how='left'
     )
     
-    return df_merged
+    return df_merged, sap_article_col, value_col
 
 
-def prepare_result(df_merged: pd.DataFrame) -> pd.DataFrame:
+def prepare_result(df_merged: pd.DataFrame, 
+                   article_col: str = 'Número de artículo',
+                   value_col: str = 'Manufactura FC') -> pd.DataFrame:
     """
     Prepare the final result DataFrame.
-    Converts Manufactura FC to numeric, fills NaN with 0.
+    Converts value column to numeric, fills NaN with 0.
     
     Args:
         df_merged: Merged DataFrame from merge_data()
+        article_col: Name of the article column
+        value_col: Name of the value column
     
     Returns:
-        DataFrame with 'Número de artículo' and 'Manufactura FC' columns,
-        where Manufactura FC is numeric with 0 for missing values.
+        DataFrame with article and value columns,
+        where value is numeric with 0 for missing values.
     """
-    result = df_merged[['Número de artículo', 'Manufactura FC']].copy()
+    result = df_merged[[article_col, value_col]].copy()
     
     # Convert to numeric, coercing errors to NaN
-    result['Manufactura FC'] = pd.to_numeric(result['Manufactura FC'], errors='coerce')
+    result[value_col] = pd.to_numeric(result[value_col], errors='coerce')
     
     # Fill NaN with 0
-    result['Manufactura FC'] = result['Manufactura FC'].fillna(0)
+    result[value_col] = result[value_col].fillna(0)
     
     return result
 
 
-def process_files(cost_path: str, sap_path: str) -> pd.DataFrame:
+def process_files(cost_path: str, sap_path: str,
+                  cost_article_col: str = 'Artículo',
+                  cost_value_col: str = 'Manufactura FC',
+                  sap_article_col: str = 'Número de artículo') -> pd.DataFrame:
     """
     Full processing pipeline for file inputs.
     
     Args:
         cost_path: Path to the cost Excel file
         sap_path: Path to the SAP Excel file
+        cost_article_col: Name of article column in cost file
+        cost_value_col: Name of value column in cost file
+        sap_article_col: Name of article column in SAP file
     
     Returns:
-        Result DataFrame with matched Manufactura FC values
+        Result DataFrame with matched values
     """
-    df_cost = load_cost_file(cost_path)
-    df_sap = load_sap_file(sap_path)
-    df_merged = merge_data(df_sap, df_cost)
-    result = prepare_result(df_merged)
+    df_cost, _, _ = load_cost_file(cost_path, cost_article_col, cost_value_col)
+    df_sap, _ = load_sap_file(sap_path, sap_article_col)
+    df_merged, article_col, value_col = merge_data(df_sap, df_cost, sap_article_col, cost_article_col, cost_value_col)
+    result = prepare_result(df_merged, article_col, value_col)
     return result
 
 
-def process_with_clipboard_sap(cost_path: str, sap_df: pd.DataFrame) -> pd.DataFrame:
+def process_with_clipboard_sap(cost_path: str, sap_df: pd.DataFrame,
+                                cost_article_col: str = 'Artículo',
+                                cost_value_col: str = 'Manufactura FC',
+                                sap_article_col: str = 'Número de artículo') -> pd.DataFrame:
     """
     Full processing pipeline using clipboard data for SAP.
     
     Args:
         cost_path: Path to the cost Excel file
         sap_df: DataFrame from clipboard containing SAP data
+        cost_article_col: Name of article column in cost file
+        cost_value_col: Name of value column in cost file
+        sap_article_col: Name of article column in SAP data
     
     Returns:
-        Result DataFrame with matched Manufactura FC values
+        Result DataFrame with matched values
     """
-    df_cost = load_cost_file(cost_path)
-    sap_df = prepare_sap_from_clipboard(sap_df)
-    df_merged = merge_data(sap_df, df_cost)
-    result = prepare_result(df_merged)
+    df_cost, _, _ = load_cost_file(cost_path, cost_article_col, cost_value_col)
+    sap_df, _ = prepare_sap_from_clipboard(sap_df, sap_article_col)
+    df_merged, article_col, value_col = merge_data(sap_df, df_cost, sap_article_col, cost_article_col, cost_value_col)
+    result = prepare_result(df_merged, article_col, value_col)
     return result
+

@@ -199,7 +199,8 @@ class TestPrepareSapFromClipboard(unittest.TestCase):
             "Número de artículo": [123.0, 456, "789"],
             "Descripción": ["A", "B", "C"]
         })
-        result = prepare_sap_from_clipboard(df)
+        result, col_name = prepare_sap_from_clipboard(df)
+        self.assertEqual(col_name, "Número de artículo")
         self.assertEqual(result["Número de artículo"].iloc[0], "123")
         self.assertEqual(result["Número de artículo"].iloc[1], "456")
     
@@ -212,6 +213,16 @@ class TestPrepareSapFromClipboard(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             prepare_sap_from_clipboard(df)
         self.assertIn("Número de artículo", str(ctx.exception))
+    
+    def test_custom_column_name(self):
+        """Test custom column name works."""
+        df = pd.DataFrame({
+            "Article Code": [123.0, 456],
+            "Descripción": ["A", "B"]
+        })
+        result, col_name = prepare_sap_from_clipboard(df, article_column="Article Code")
+        self.assertEqual(col_name, "Article Code")
+        self.assertEqual(result["Article Code"].iloc[0], "123")
 
 
 class TestMergeData(unittest.TestCase):
@@ -224,7 +235,7 @@ class TestMergeData(unittest.TestCase):
             "Artículo": ["123", "456", "789"],
             "Manufactura FC": [10.5, 20.0, 30.0]
         })
-        result = merge_data(df_sap, df_cost)
+        result, article_col, value_col = merge_data(df_sap, df_cost)
         self.assertEqual(len(result), 3)
         self.assertEqual(result["Manufactura FC"].iloc[0], 10.5)
     
@@ -235,7 +246,7 @@ class TestMergeData(unittest.TestCase):
             "Artículo": ["123", 456, 789.0],
             "Manufactura FC": [10, 20, 30]
         })
-        result = merge_data(df_sap, df_cost)
+        result, _, _ = merge_data(df_sap, df_cost)
         self.assertEqual(len(result), 3)
         # All should match despite type differences
         self.assertFalse(result["Manufactura FC"].isna().any())
@@ -247,7 +258,7 @@ class TestMergeData(unittest.TestCase):
             "Artículo": ["123000"],
             "Manufactura FC": [100]
         })
-        result = merge_data(df_sap, df_cost)
+        result, _, _ = merge_data(df_sap, df_cost)
         self.assertEqual(result["Manufactura FC"].iloc[0], 100)
     
     def test_no_match_returns_nan(self):
@@ -257,7 +268,7 @@ class TestMergeData(unittest.TestCase):
             "Artículo": ["123"],
             "Manufactura FC": [10]
         })
-        result = merge_data(df_sap, df_cost)
+        result, _, _ = merge_data(df_sap, df_cost)
         self.assertTrue(pd.isna(result["Manufactura FC"].iloc[0]))
     
     def test_preserves_sap_order(self):
@@ -267,20 +278,21 @@ class TestMergeData(unittest.TestCase):
             "Artículo": ["A", "B", "C"],
             "Manufactura FC": [1, 2, 3]
         })
-        result = merge_data(df_sap, df_cost)
+        result, _, _ = merge_data(df_sap, df_cost)
         self.assertEqual(result["Número de artículo"].tolist(), ["C", "A", "B"])
         self.assertEqual(result["Manufactura FC"].tolist(), [3, 1, 2])
     
     def test_duplicate_codes_in_cost(self):
-        """Test duplicate codes in cost file (first match used by default)."""
+        """Test duplicate codes in cost file (first match used, no extra rows)."""
         df_sap = pd.DataFrame({"Número de artículo": ["123"]})
         df_cost = pd.DataFrame({
             "Artículo": ["123", "123"],
             "Manufactura FC": [10, 20]  # Duplicate code with different values
         })
-        result = merge_data(df_sap, df_cost)
-        # Merge will create two rows due to duplicates
-        self.assertEqual(len(result), 2)
+        result, _, _ = merge_data(df_sap, df_cost)
+        # Should only have 1 row (duplicates removed, first value kept)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result["Manufactura FC"].iloc[0], 10)  # First value kept
     
     def test_empty_sap(self):
         """Test empty SAP DataFrame."""
@@ -289,7 +301,7 @@ class TestMergeData(unittest.TestCase):
             "Artículo": ["123"],
             "Manufactura FC": [10]
         })
-        result = merge_data(df_sap, df_cost)
+        result, _, _ = merge_data(df_sap, df_cost)
         self.assertEqual(len(result), 0)
     
     def test_empty_cost(self):
@@ -299,9 +311,27 @@ class TestMergeData(unittest.TestCase):
             "Artículo": [],
             "Manufactura FC": []
         })
-        result = merge_data(df_sap, df_cost)
+        result, _, _ = merge_data(df_sap, df_cost)
         self.assertEqual(len(result), 1)
         self.assertTrue(pd.isna(result["Manufactura FC"].iloc[0]))
+    
+    def test_custom_column_names(self):
+        """Test custom column names work correctly."""
+        df_sap = pd.DataFrame({"Article": ["123", "456"]})
+        df_cost = pd.DataFrame({
+            "Code": ["123", "456"],
+            "Price": [10.5, 20.0]
+        })
+        result, article_col, value_col = merge_data(
+            df_sap, df_cost, 
+            sap_article_col="Article",
+            cost_article_col="Code",
+            value_col="Price"
+        )
+        self.assertEqual(article_col, "Article")
+        self.assertEqual(value_col, "Price")
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result["Price"].iloc[0], 10.5)
 
 
 class TestPrepareResult(unittest.TestCase):
@@ -380,8 +410,8 @@ class TestIntegration(unittest.TestCase):
             "Manufactura FC": [10, 20, 30, 40, 50]
         })
         
-        merged = merge_data(df_sap, df_cost)
-        result = prepare_result(merged)
+        merged, article_col, value_col = merge_data(df_sap, df_cost)
+        result = prepare_result(merged, article_col, value_col)
         
         # Check all matches are correct
         self.assertEqual(result["Manufactura FC"].iloc[0], 10)   # 123 matches "123"
@@ -389,6 +419,28 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(result["Manufactura FC"].iloc[2], 30)   # "789" matches 789.0
         self.assertEqual(result["Manufactura FC"].iloc[3], 40)   # 1.23e5 matches "123000"
         self.assertEqual(result["Manufactura FC"].iloc[4], 0)    # NaN doesn't match, becomes 0
+    
+    def test_full_pipeline_with_custom_columns(self):
+        """Test full pipeline with custom column names."""
+        df_sap = pd.DataFrame({
+            "Article Code": [123, 456]
+        })
+        
+        df_cost = pd.DataFrame({
+            "Product ID": ["123", "456"],
+            "Unit Price": [10.5, 20.0]
+        })
+        
+        merged, article_col, value_col = merge_data(
+            df_sap, df_cost,
+            sap_article_col="Article Code",
+            cost_article_col="Product ID",
+            value_col="Unit Price"
+        )
+        result = prepare_result(merged, article_col, value_col)
+        
+        self.assertEqual(result["Unit Price"].iloc[0], 10.5)
+        self.assertEqual(result["Unit Price"].iloc[1], 20.0)
 
 
 if __name__ == "__main__":
