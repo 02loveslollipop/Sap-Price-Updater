@@ -35,37 +35,37 @@ The system uses **pandas** for data processing with robust type normalization to
 ## Data Flow
 
 ```mermaid
-flowchart TD
-    subgraph Input["📥 Input Sources"]
-        COST[("💾 Cost Excel File")]
-        SAP_FILE[("📄 SAP Excel File")]
-        SAP_CLIP[("📋 SAP Clipboard Data")]
+flowchart LR
+    subgraph Input["Input Sources"]
+        COST[("Cost Excel File")]
+        SAP_FILE[("SAP Excel File")]
+        SAP_CLIP[("SAP Clipboard Data")]
     end
 
-    subgraph CostProcessing["💰 Cost File Processing"]
+    subgraph CostProcessing["Cost File Processing"]
         LOAD_COST["Load Excel File"]
         NORM_COST["Normalize Article Codes"]
         DEDUP["Remove Duplicate Articles<br/>(keep first)"]
     end
 
-    subgraph SAPProcessing["📊 SAP Data Processing"]
+    subgraph SAPProcessing["SAP Data Processing"]
         LOAD_SAP["Load Excel/Parse Clipboard"]
         REMOVE_EMPTY["Remove Empty Trailing Rows"]
         FILTER_INVALID["Filter Invalid Article Rows<br/>(empty, zero, null)"]
         NORM_SAP["Normalize Article Codes"]
     end
 
-    subgraph ColumnConfig["⚙️ Column Configuration"]
+    subgraph ColumnConfig["Column Configuration"]
         AUTO_DETECT["Auto-detect Columns"]
         USER_SELECT["User Selects Columns<br/>(Article + Value)"]
     end
 
-    subgraph Merge["🔗 Data Merge"]
+    subgraph Merge["Data Merge"]
         LEFT_JOIN["Left Join on Article Code<br/>(preserve SAP order)"]
         FILL_NA["Fill Missing Values with 0"]
     end
 
-    subgraph Output["📤 Output"]
+    subgraph Output["Output"]
         DISPLAY["Display in Results Table"]
         COPY["Copy to Clipboard"]
     end
