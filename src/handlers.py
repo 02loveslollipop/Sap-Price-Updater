@@ -248,7 +248,7 @@ def _remove_empty_trailing_rows(df: pd.DataFrame) -> pd.DataFrame:
 def prepare_sap_from_clipboard(df: pd.DataFrame, article_column: str = 'Número de artículo') -> Tuple[pd.DataFrame, str]:
     """
     Prepare a DataFrame from clipboard to be used as SAP data.
-    Normalizes the article code column.
+    Normalizes the article code column and removes rows with empty article codes.
     
     Args:
         df: DataFrame parsed from clipboard
@@ -263,10 +263,44 @@ def prepare_sap_from_clipboard(df: pd.DataFrame, article_column: str = 'Número 
     if article_column not in df.columns:
         raise ValueError(f"Column '{article_column}' not found in pasted data.")
     
+    # Remove rows where article column is empty or invalid before normalization
+    df = _remove_invalid_article_rows(df, article_column)
+    
     # Normalize the article code column
     df[article_column] = normalize_code_column(df[article_column])
     
     return df, article_column
+
+
+def _remove_invalid_article_rows(df: pd.DataFrame, article_column: str) -> pd.DataFrame:
+    """
+    Remove rows where the article column is empty, zero, or invalid.
+    This handles cases where clipboard data includes empty rows that have
+    other data but no article code (the key column for mapping).
+    
+    Args:
+        df: DataFrame to clean
+        article_column: Name of the article column to check
+    
+    Returns:
+        DataFrame with invalid article rows removed
+    """
+    if df.empty or article_column not in df.columns:
+        return df
+    
+    def is_valid_article(val) -> bool:
+        """Check if an article code value is valid (non-empty, non-zero)."""
+        if val is None or pd.isna(val):
+            return False
+        str_val = str(val).strip().lower()
+        # Invalid if empty, zero, or nan-like
+        return str_val not in ('', '0', '0.0', '0.00', '0.0000', 'nan', 'none', 'null')
+    
+    # Keep only rows with valid article codes
+    valid_mask = df[article_column].apply(is_valid_article)
+    df_filtered = df[valid_mask].reset_index(drop=True)
+    
+    return df_filtered
 
 
 def merge_data(df_sap: pd.DataFrame, df_cost: pd.DataFrame,

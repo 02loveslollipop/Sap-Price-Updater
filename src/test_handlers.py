@@ -501,5 +501,57 @@ class TestRemoveEmptyTrailingRows(unittest.TestCase):
         self.assertEqual(len(df), 1)
 
 
+class TestRemoveInvalidArticleRows(unittest.TestCase):
+    """Test cases for removing rows with empty/invalid article codes."""
+    
+    def test_empty_article_with_other_data(self):
+        """Test row with empty article but other values is removed."""
+        clipboard_text = "Número de artículo\tOther\tValue\n123\tData\t10\n\t0.0000\tN"
+        df = parse_clipboard_data(clipboard_text)
+        df_prepared, _ = prepare_sap_from_clipboard(df)
+        self.assertEqual(len(df_prepared), 1)
+        self.assertEqual(df_prepared["Número de artículo"].iloc[0], "123")
+    
+    def test_zero_article_code_removed(self):
+        """Test row with zero article code is removed."""
+        clipboard_text = "Número de artículo\tData\n123\tValid\n0\tInvalid\n456\tValid2"
+        df = parse_clipboard_data(clipboard_text)
+        df_prepared, _ = prepare_sap_from_clipboard(df)
+        self.assertEqual(len(df_prepared), 2)
+        self.assertEqual(df_prepared["Número de artículo"].tolist(), ["123", "456"])
+    
+    def test_zero_decimal_article_removed(self):
+        """Test row with 0.0000 article code is removed."""
+        clipboard_text = "Número de artículo\tData\n123\tValid\n0.0000\tInvalid"
+        df = parse_clipboard_data(clipboard_text)
+        df_prepared, _ = prepare_sap_from_clipboard(df)
+        self.assertEqual(len(df_prepared), 1)
+        self.assertEqual(df_prepared["Número de artículo"].iloc[0], "123")
+    
+    def test_valid_articles_preserved(self):
+        """Test all valid article codes are preserved."""
+        clipboard_text = "Número de artículo\tData\n123\tA\n456\tB\n789\tC"
+        df = parse_clipboard_data(clipboard_text)
+        df_prepared, _ = prepare_sap_from_clipboard(df)
+        self.assertEqual(len(df_prepared), 3)
+    
+    def test_custom_article_column(self):
+        """Test works with custom article column name."""
+        clipboard_text = "Article\tData\n123\tValid\n\tInvalid\n456\tValid2"
+        df = parse_clipboard_data(clipboard_text)
+        df_prepared, _ = prepare_sap_from_clipboard(df, article_column="Article")
+        self.assertEqual(len(df_prepared), 2)
+        self.assertEqual(df_prepared["Article"].tolist(), ["123", "456"])
+    
+    def test_sap_like_row_with_empty_article(self):
+        """Test SAP-style row with empty article but other data is removed."""
+        # Simulates the actual SAP row format seen in production
+        clipboard_text = "Tipo\tNúmero de artículo\tDescripción\tCantidad\n\t12151109001\tCODO\t1\n\t\t\t0.0000"
+        df = parse_clipboard_data(clipboard_text)
+        df_prepared, _ = prepare_sap_from_clipboard(df)
+        self.assertEqual(len(df_prepared), 1)
+        self.assertEqual(df_prepared["Número de artículo"].iloc[0], "12151109001")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
