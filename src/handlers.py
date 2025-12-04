@@ -197,6 +197,51 @@ def parse_clipboard_data(clipboard_text: str) -> pd.DataFrame:
     
     df = pd.DataFrame(data_rows, columns=headers)
     
+    # Remove last row if it's all empty or zeros (common clipboard artifact)
+    df = _remove_empty_trailing_rows(df)
+    
+    return df
+
+
+def _remove_empty_trailing_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove trailing rows that are all empty, zeros, or whitespace.
+    This handles a common edge case when pasting from Excel where
+    the last row may contain only empty cells or zeros.
+    
+    Args:
+        df: DataFrame to clean
+    
+    Returns:
+        DataFrame with trailing empty/zero rows removed
+    """
+    if df.empty:
+        return df
+    
+    # Check rows from the end
+    rows_to_drop = []
+    for idx in range(len(df) - 1, -1, -1):
+        row = df.iloc[idx]
+        is_empty_row = True
+        
+        for val in row:
+            # Convert to string and strip whitespace
+            str_val = str(val).strip().lower()
+            
+            # Check if value is empty, zero, or nan-like
+            if str_val not in ('', '0', '0.0', '0.00', 'nan', 'none', 'null'):
+                is_empty_row = False
+                break
+        
+        if is_empty_row:
+            rows_to_drop.append(idx)
+        else:
+            # Stop at the first non-empty row from the end
+            break
+    
+    if rows_to_drop:
+        df = df.drop(df.index[rows_to_drop]).reset_index(drop=True)
+    
     return df
 
 

@@ -443,5 +443,63 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(result["Unit Price"].iloc[1], 20.0)
 
 
+class TestRemoveEmptyTrailingRows(unittest.TestCase):
+    """Test cases for removing trailing empty/zero rows from clipboard data."""
+    
+    def test_last_row_all_zeros(self):
+        """Test removing last row when all values are zeros."""
+        clipboard_text = "Col1\tCol2\tCol3\n123\tData\t10\n0\t0\t0"
+        df = parse_clipboard_data(clipboard_text)
+        self.assertEqual(len(df), 1)  # Only first data row remains
+        self.assertEqual(df["Col1"].iloc[0], "123")
+    
+    def test_last_row_all_empty(self):
+        """Test removing last row when all values are empty."""
+        clipboard_text = "Col1\tCol2\tCol3\n123\tData\t10\n\t\t"
+        df = parse_clipboard_data(clipboard_text)
+        self.assertEqual(len(df), 1)
+        self.assertEqual(df["Col1"].iloc[0], "123")
+    
+    def test_last_row_mixed_empty_and_zero(self):
+        """Test removing last row with mixed empty and zero values."""
+        clipboard_text = "Col1\tCol2\tCol3\n123\tData\t10\n0\t\t0.0"
+        df = parse_clipboard_data(clipboard_text)
+        self.assertEqual(len(df), 1)
+        self.assertEqual(df["Col1"].iloc[0], "123")
+    
+    def test_multiple_trailing_empty_rows(self):
+        """Test removing multiple consecutive trailing empty rows."""
+        clipboard_text = "Col1\tCol2\n123\tData\n0\t0\n\t\n0.0\t0.00"
+        df = parse_clipboard_data(clipboard_text)
+        self.assertEqual(len(df), 1)  # Only valid data row remains
+        self.assertEqual(df["Col1"].iloc[0], "123")
+    
+    def test_no_trailing_empty_rows(self):
+        """Test data without trailing empty rows is unchanged."""
+        clipboard_text = "Col1\tCol2\n123\tData\n456\tMore"
+        df = parse_clipboard_data(clipboard_text)
+        self.assertEqual(len(df), 2)
+        self.assertEqual(df["Col1"].tolist(), ["123", "456"])
+    
+    def test_partial_empty_last_row_kept(self):
+        """Test last row with some valid data is kept."""
+        clipboard_text = "Col1\tCol2\tCol3\n123\tData\t10\n0\tSome Value\t0"
+        df = parse_clipboard_data(clipboard_text)
+        self.assertEqual(len(df), 2)  # Both rows kept
+        self.assertEqual(df["Col2"].iloc[1], "Some Value")
+    
+    def test_whitespace_in_empty_row(self):
+        """Test last row with whitespace-only values is removed."""
+        clipboard_text = "Col1\tCol2\n123\tData\n   \t  "
+        df = parse_clipboard_data(clipboard_text)
+        self.assertEqual(len(df), 1)
+    
+    def test_nan_none_values_treated_as_empty(self):
+        """Test nan/none string values are treated as empty."""
+        clipboard_text = "Col1\tCol2\n123\tData\nnan\tnone"
+        df = parse_clipboard_data(clipboard_text)
+        self.assertEqual(len(df), 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
