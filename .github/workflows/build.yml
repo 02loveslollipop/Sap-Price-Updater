@@ -98,6 +98,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    permissions:
+      contents: write  # Required to create the release and upload assets
 
     steps:
     - name: Download all artifacts
@@ -119,5 +121,3 @@ jobs:
           artifacts/SapPriceUpdater-Linux/SapPriceUpdater-Linux.zip
           artifacts/SapPriceUpdater-Windows/SapPriceUpdater-Windows.zip
           artifacts/SapPriceUpdater-MacOS/SapPriceUpdater-MacOS.zip
-      env:
-        GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}

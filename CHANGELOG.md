@@ -18,6 +18,7 @@ Releases are created automatically by CI on every push to `main` (tagged `v<run_
 - Added `requirements.txt` (runtime) and `requirements-dev.txt` (development/build); CI and build scripts install from them.
 - Added `xlrd` as a dependency so `.xls` files — already offered by the file dialog — can actually be opened.
 - CI: bumped GitHub Actions (`checkout` v7, `setup-python` v7, `upload-artifact` v7, `download-artifact` v8, `gh-release` v3); tests now run on Python 3.11 and 3.13; builds use Python 3.13.
+- CI: the release job now grants `contents: write` to the built-in `GITHUB_TOKEN` — `action-gh-release` v3 no longer reads the token from the `GITHUB_TOKEN` env var, which made releases fail with 403; the `RELEASE_TOKEN` secret is no longer needed.
 - Verified compatibility with pandas 3.x (tests pass on pandas 2.1 and 3.0).
 
 ### Tests
