@@ -4,8 +4,21 @@ All data transformation logic is separated here for testability.
 """
 import pandas as pd
 import numpy as np
-import re
 from typing import Optional, Tuple, List
+
+# String forms treated as blank/zero/nan-like when cleaning rows
+BLANK_LIKE_VALUES = ('', '0', '0.0', '0.00', '0.000', '0.0000',
+                     '-0', '-0.0', 'nan', 'none', 'null')
+
+
+def is_blank_like(value) -> bool:
+    """
+    Check if a scalar value is empty, zero, or nan-like in string form.
+    Used to filter out artifact rows from clipboard data.
+    """
+    if value is None or pd.isna(value):
+        return True
+    return str(value).strip().lower() in BLANK_LIKE_VALUES
 
 
 def normalize_article_code(value) -> str:
@@ -36,7 +49,7 @@ def normalize_article_code(value) -> str:
         return ""
     
     # Handle scientific notation (e.g., "1.23E+05" -> "123000")
-    if 'e' in str_value.lower() or 'E' in str_value:
+    if 'e' in str_value.lower():
         try:
             # Convert scientific notation to regular number
             float_val = float(str_value)
@@ -45,9 +58,9 @@ def normalize_article_code(value) -> str:
                 return str(int(float_val))
             else:
                 return str(float_val)
-        except ValueError:
+        except (ValueError, OverflowError):
             pass
-    
+
     # Handle float strings like "123.0" or "456.00"
     try:
         float_val = float(str_value)
@@ -57,7 +70,7 @@ def normalize_article_code(value) -> str:
         else:
             # Keep the decimal if it's meaningful
             return str(float_val)
-    except ValueError:
+    except (ValueError, OverflowError):
         # Not a number, return as-is (stripped)
         return str_value
 
@@ -75,7 +88,7 @@ def normalize_code_column(series: pd.Series) -> pd.Series:
     return series.apply(normalize_article_code)
 
 
-def get_excel_columns(file_path: str, sheet_name: str = None) -> List[str]:
+def get_excel_columns(file_path: str, sheet_name: Optional[str] = None) -> List[str]:
     """
     Get the column names from an Excel file without loading all data.
     
@@ -93,26 +106,30 @@ def get_excel_columns(file_path: str, sheet_name: str = None) -> List[str]:
     return list(df.columns)
 
 
-def load_cost_file(file_path: str, article_column: str = 'Artículo', 
-                   value_column: str = 'Manufactura FC', 
-                   sheet_name: str = 'COSTO PROD') -> Tuple[pd.DataFrame, str, str]:
+def load_cost_file(file_path: str, article_column: str = 'Artículo',
+                   value_column: str = 'Manufactura FC',
+                   sheet_name: Optional[str] = 'COSTO PROD') -> Tuple[pd.DataFrame, str, str]:
     """
     Load the cost file and prepare it for processing.
-    
+
     Args:
         file_path: Path to the Excel file
         article_column: Name of the column containing article codes
         value_column: Name of the column containing the value to extract
-        sheet_name: Name of the sheet to load
-    
+        sheet_name: Name of the sheet to load (None loads the first sheet)
+
     Returns:
         Tuple of (DataFrame with normalized article column, article_column name, value_column name)
-    
+
     Raises:
         ValueError: If required columns are missing
         FileNotFoundError: If file doesn't exist
     """
-    df = pd.read_excel(file_path, sheet_name=sheet_name)
+    if sheet_name:
+        df = pd.read_excel(file_path, sheet_name=sheet_name)
+    else:
+        # sheet_name=None would make pandas return a dict of ALL sheets
+        df = pd.read_excel(file_path)
     
     # Validate required columns
     if article_column not in df.columns:
@@ -170,8 +187,8 @@ def parse_clipboard_data(clipboard_text: str) -> pd.DataFrame:
     if not clipboard_text or not clipboard_text.strip():
         raise ValueError("No hay datos en el portapapeles.")
     
-    # Split into lines
-    lines = clipboard_text.strip().split('\n')
+    # Split into lines (splitlines handles \r\n from Windows clipboards)
+    lines = clipboard_text.strip().splitlines()
     
     if len(lines) < 2:
         raise ValueError("Los datos deben tener al menos una fila de encabezados y una fila de datos.")
@@ -222,18 +239,7 @@ def _remove_empty_trailing_rows(df: pd.DataFrame) -> pd.DataFrame:
     rows_to_drop = []
     for idx in range(len(df) - 1, -1, -1):
         row = df.iloc[idx]
-        is_empty_row = True
-        
-        for val in row:
-            # Convert to string and strip whitespace
-            str_val = str(val).strip().lower()
-            
-            # Check if value is empty, zero, or nan-like
-            if str_val not in ('', '0', '0.0', '0.00', 'nan', 'none', 'null'):
-                is_empty_row = False
-                break
-        
-        if is_empty_row:
+        if all(is_blank_like(val) for val in row):
             rows_to_drop.append(idx)
         else:
             # Stop at the first non-empty row from the end
@@ -287,19 +293,11 @@ def _remove_invalid_article_rows(df: pd.DataFrame, article_column: str) -> pd.Da
     """
     if df.empty or article_column not in df.columns:
         return df
-    
-    def is_valid_article(val) -> bool:
-        """Check if an article code value is valid (non-empty, non-zero)."""
-        if val is None or pd.isna(val):
-            return False
-        str_val = str(val).strip().lower()
-        # Invalid if empty, zero, or nan-like
-        return str_val not in ('', '0', '0.0', '0.00', '0.0000', 'nan', 'none', 'null')
-    
+
     # Keep only rows with valid article codes
-    valid_mask = df[article_column].apply(is_valid_article)
+    valid_mask = df[article_column].apply(lambda val: not is_blank_like(val))
     df_filtered = df[valid_mask].reset_index(drop=True)
-    
+
     return df_filtered
 
 

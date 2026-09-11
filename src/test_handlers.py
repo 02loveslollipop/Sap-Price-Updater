@@ -19,6 +19,7 @@ from handlers import (
     prepare_sap_from_clipboard,
     merge_data,
     prepare_result,
+    load_cost_file,
 )
 
 
@@ -108,6 +109,11 @@ class TestNormalizeArticleCode(unittest.TestCase):
         self.assertEqual(normalize_article_code("00123"), "123")  # Numeric string loses leading zeros
         self.assertEqual(normalize_article_code("ABC00123"), "ABC00123")  # Non-numeric preserves
 
+    def test_infinity_passthrough(self):
+        """Test infinite values don't crash and pass through as strings."""
+        self.assertEqual(normalize_article_code(float('inf')), "inf")
+        self.assertEqual(normalize_article_code(float('-inf')), "-inf")
+
 
 class TestNormalizeCodeColumn(unittest.TestCase):
     """Test normalize_code_column function."""
@@ -188,6 +194,20 @@ class TestParseClipboardData(unittest.TestCase):
         clipboard = "Col1\tCol2\nA\tB\n\n\nC\tD\n"
         result = parse_clipboard_data(clipboard)
         self.assertEqual(len(result), 2)  # Only 2 data rows
+
+    def test_windows_line_endings(self):
+        """Test CRLF line endings (Windows clipboard) leave no carriage returns."""
+        clipboard = "Col1\tCol2\r\n123\tData\r\n456\tMore\r\n"
+        result = parse_clipboard_data(clipboard)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result["Col2"].tolist(), ["Data", "More"])
+
+    def test_windows_line_endings_article_last(self):
+        """Test article codes in the last column normalize correctly after CRLF paste."""
+        clipboard = "Descripción\tNúmero de artículo\r\nA\t123\r\nB\t456\r\n"
+        df = parse_clipboard_data(clipboard)
+        prepared, _ = prepare_sap_from_clipboard(df)
+        self.assertEqual(prepared["Número de artículo"].tolist(), ["123", "456"])
 
 
 class TestPrepareSapFromClipboard(unittest.TestCase):
@@ -473,6 +493,12 @@ class TestRemoveEmptyTrailingRows(unittest.TestCase):
         df = parse_clipboard_data(clipboard_text)
         self.assertEqual(len(df), 1)  # Only valid data row remains
         self.assertEqual(df["Col1"].iloc[0], "123")
+
+    def test_last_row_zero_variants(self):
+        """Test trailing rows with '0.000'-style zeros are removed."""
+        clipboard_text = "Col1\tCol2\n123\tData\n0.000\t0.000"
+        df = parse_clipboard_data(clipboard_text)
+        self.assertEqual(len(df), 1)
     
     def test_no_trailing_empty_rows(self):
         """Test data without trailing empty rows is unchanged."""
@@ -551,6 +577,51 @@ class TestRemoveInvalidArticleRows(unittest.TestCase):
         df_prepared, _ = prepare_sap_from_clipboard(df)
         self.assertEqual(len(df_prepared), 1)
         self.assertEqual(df_prepared["Número de artículo"].iloc[0], "12151109001")
+
+
+class TestLoadCostFile(unittest.TestCase):
+    """Test load_cost_file sheet handling."""
+
+    def test_sheet_name_none_loads_first_sheet(self):
+        """sheet_name=None must read the first sheet, not return a dict of all sheets."""
+        import tempfile
+        df = pd.DataFrame({"Artículo": ["123", "456"], "Manufactura FC": [10.5, 20.0]})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "cost.xlsx")
+            with pd.ExcelWriter(path) as writer:
+                df.to_excel(writer, sheet_name="Hoja1", index=False)
+
+            result, art_col, val_col = load_cost_file(
+                path, "Artículo", "Manufactura FC", sheet_name=None
+            )
+            self.assertIsInstance(result, pd.DataFrame)
+            self.assertEqual(len(result), 2)
+            self.assertEqual(art_col, "Artículo")
+            self.assertEqual(val_col, "Manufactura FC")
+
+    def test_named_sheet_loaded(self):
+        """A named sheet is read from the workbook."""
+        import tempfile
+        df = pd.DataFrame({"Artículo": ["789"], "Manufactura FC": [5.0]})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "cost.xlsx")
+            with pd.ExcelWriter(path) as writer:
+                df.to_excel(writer, sheet_name="COSTO PROD", index=False)
+
+            result, _, _ = load_cost_file(path, "Artículo", "Manufactura FC")
+            self.assertEqual(len(result), 1)
+
+    def test_missing_column_raises(self):
+        """Missing required columns raise ValueError."""
+        import tempfile
+        df = pd.DataFrame({"Other": [1]})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "cost.xlsx")
+            with pd.ExcelWriter(path) as writer:
+                df.to_excel(writer, sheet_name="Hoja1", index=False)
+
+            with self.assertRaises(ValueError):
+                load_cost_file(path, "Artículo", "Manufactura FC", sheet_name=None)
 
 
 if __name__ == "__main__":
