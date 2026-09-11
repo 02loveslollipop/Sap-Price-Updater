@@ -110,12 +110,15 @@ Sap-Price-Updater/
 │   ├── main.py           # GUI application (tkinter/ttk)
 │   ├── handlers.py       # Data processing logic
 │   ├── i18n.py           # Internationalization (English/Spanish)
-│   └── test_handlers.py  # Unit tests (60 tests)
+│   └── test_handlers.py  # Unit tests (67 tests)
 ├── .github/
 │   └── workflows/
 │       └── build.yml     # CI/CD pipeline
-├── build_exe.ps1         # Build script (Windows)
+├── build.ps1             # Build script (Windows)
 ├── build.sh              # Build script (Linux/MacOS)
+├── requirements.txt      # Runtime dependencies
+├── requirements-dev.txt  # Development/build dependencies
+├── CHANGELOG.md
 ├── .gitignore
 └── README.md
 ```
@@ -143,7 +146,7 @@ venv\Scripts\activate
 source venv/bin/activate
 
 # Install dependencies
-pip install pandas openpyxl
+pip install -r requirements.txt
 
 # Run application
 python src/main.py
@@ -153,7 +156,7 @@ python src/main.py
 
 **Windows:**
 ```powershell
-.\build_exe.ps1
+.\build.ps1
 ```
 
 **Linux/MacOS:**
@@ -171,12 +174,17 @@ Output: `dist/SapPriceUpdater/`
 ### Runtime
 - **Python 3.11+**
 - **pandas** - DataFrame operations and Excel I/O
-- **openpyxl** - Excel file support
+- **openpyxl** - Excel file support (`.xlsx`)
+- **xlrd** - Legacy Excel file support (`.xls`)
 - **tkinter/ttk** - GUI framework (included with Python)
+
+Runtime versions are defined in [`requirements.txt`](requirements.txt).
 
 ### Development
 - **pytest** - Unit testing
 - **PyInstaller** - Executable packaging
+
+Development versions are defined in [`requirements-dev.txt`](requirements-dev.txt).
 
 ---
 
@@ -186,7 +194,7 @@ GitHub Actions workflow provides:
 
 | Stage | Description |
 |-------|-------------|
-| **Test** | Runs 46 unit tests on every push/PR |
+| **Test** | Runs 67 unit tests on Python 3.11 and 3.13 on every push/PR |
 | **Build** | Compiles executables for Windows, Linux, MacOS |
 | **Release** | Creates GitHub release with all platform builds |
 
