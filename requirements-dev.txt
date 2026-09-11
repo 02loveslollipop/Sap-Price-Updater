@@ -1,0 +1,4 @@
+# Development and build dependencies for SAP Price Updater
+-r requirements.txt
+pytest>=8
+pyinstaller>=6.10

@@ -26,7 +26,7 @@ python3 -m venv "$VENV_PATH"
 echo ""
 echo "[3/4] Installing required packages..."
 "$VENV_PATH/bin/pip" install --upgrade pip
-"$VENV_PATH/bin/pip" install pandas openpyxl pyinstaller
+"$VENV_PATH/bin/pip" install -r requirements-dev.txt
 
 # Step 4: Build the executable
 echo ""

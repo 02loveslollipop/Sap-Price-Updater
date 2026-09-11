@@ -19,7 +19,8 @@ python -m venv $venvPath
 
 # Step 3: Install dependencies
 Write-Host "`n[3/4] Installing required packages..." -ForegroundColor Yellow
-& "$venvPath\Scripts\pip.exe" install pandas openpyxl pyinstaller
+& "$venvPath\Scripts\pip.exe" install --upgrade pip
+& "$venvPath\Scripts\pip.exe" install -r requirements-dev.txt
 
 # Step 4: Build the executable
 Write-Host "`n[4/4] Building executable with PyInstaller..." -ForegroundColor Yellow
