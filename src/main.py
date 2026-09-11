@@ -4,7 +4,6 @@ import pandas as pd
 import os
 
 from handlers import (
-    normalize_code_column,
     load_cost_file,
     load_sap_file,
     parse_clipboard_data,
@@ -138,6 +137,7 @@ class ClipboardPasteDialog:
     def __init__(self, parent):
         self.parent = parent
         self.result_df = None
+        self._preview_df = None
         
         # Create dialog window
         self.dialog = tk.Toplevel(parent)
@@ -231,7 +231,7 @@ class ClipboardPasteDialog:
     
     def accept_data(self):
         """Accept the parsed data and close dialog."""
-        if hasattr(self, '_preview_df') and self._preview_df is not None:
+        if self._preview_df is not None:
             self.result_df = self._preview_df
             self.dialog.destroy()
         else:
@@ -262,6 +262,7 @@ class SapPriceUpdaterApp:
         self.sap_file_path = tk.StringVar()
         self.df_result = None
         self.sap_from_clipboard = None  # Store SAP data from clipboard
+        self.cost_sheet_name = 'COSTO PROD'  # Sheet used in the cost file (None = first sheet)
         
         # Column configuration (defaults)
         self.column_config = {
@@ -281,15 +282,19 @@ class SapPriceUpdaterApp:
         # Top bar with language selector
         top_bar = ttk.Frame(self.root, padding=(10, 5))
         top_bar.pack(fill="x")
-        
-        ttk.Label(top_bar, text=i18n('language') + ":").pack(side="right", padx=(10, 5))
-        self.lang_var = tk.StringVar(value=i18n.language)
+
+        # Language names are shown in their own language regardless of UI language
+        self.lang_display_to_code = {'English': 'en', 'Español': 'es'}
+        self.lang_code_to_display = {code: name for name, code in self.lang_display_to_code.items()}
+        self.lang_label = ttk.Label(top_bar, text=i18n('language') + ":")
+        self.lang_label.pack(side="right", padx=(10, 5))
+        self.lang_var = tk.StringVar(value=self.lang_code_to_display[i18n.language])
         lang_combo = ttk.Combobox(
-            top_bar, 
+            top_bar,
             textvariable=self.lang_var,
-            values=['en', 'es'],
+            values=list(self.lang_display_to_code.keys()),
             state="readonly",
-            width=5
+            width=8
         )
         lang_combo.pack(side="right")
         lang_combo.bind("<<ComboboxSelected>>", self.change_language)
@@ -365,13 +370,16 @@ class SapPriceUpdaterApp:
 
     def change_language(self, event=None):
         """Change the application language and refresh UI."""
-        new_lang = self.lang_var.get()
+        new_lang = self.lang_display_to_code.get(self.lang_var.get(), i18n.language)
         i18n.set_language(new_lang)
         self.refresh_ui_text()
-    
+
     def refresh_ui_text(self):
         """Refresh all UI text with current language."""
         self.root.title(i18n('app_title'))
+
+        # Update language selector label
+        self.lang_label.config(text=i18n('language') + ":")
         
         # Update frame labels
         self.input_frame.config(text=i18n('file_selection'))
@@ -465,27 +473,31 @@ class SapPriceUpdaterApp:
 
     def browse_cost_file(self):
         filename = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx *.xls")])
-        if filename:
-            self.cost_file_path.set(filename)
+        if not filename:
+            return
+        self.cost_file_path.set(filename)
+        self.cost_sheet_name = 'COSTO PROD'
+        try:
+            # Try to load columns from the default cost sheet
+            self.cost_columns = get_excel_columns(filename, self.cost_sheet_name)
+        except Exception:
+            # Cost sheet not found: fall back to the workbook's first sheet
+            self.cost_sheet_name = None
             try:
-                # Try to load columns from the file
-                self.cost_columns = get_excel_columns(filename, 'COSTO PROD')
-                
-                # Try to auto-select matching columns
-                for col in self.cost_columns:
-                    if 'artículo' in col.lower() or 'articulo' in col.lower():
-                        self.column_config['cost_article'] = col
-                    if 'manufactura' in col.lower() or 'costo' in col.lower() or 'fc' in col.lower():
-                        self.column_config['cost_value'] = col
-                
-                self.check_enable_config_button()
-            except Exception as e:
-                # If we can't read the sheet, try without sheet name
-                try:
-                    self.cost_columns = get_excel_columns(filename)
-                    self.check_enable_config_button()
-                except:
-                    self.cost_columns = []
+                self.cost_columns = get_excel_columns(filename)
+            except Exception:
+                self.cost_columns = []
+        self._autoselect_cost_columns()
+        self.check_enable_config_button()
+
+    def _autoselect_cost_columns(self):
+        """Pre-select cost columns whose names look like the article/value columns."""
+        for col in self.cost_columns:
+            col_lower = col.lower()
+            if 'artículo' in col_lower or 'articulo' in col_lower:
+                self.column_config['cost_article'] = col
+            if 'manufactura' in col_lower or 'costo' in col_lower or 'fc' in col_lower:
+                self.column_config['cost_value'] = col
 
     def browse_sap_file(self):
         filename = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx *.xls")])
@@ -505,7 +517,7 @@ class SapPriceUpdaterApp:
                         break
                 
                 self.check_enable_config_button()
-            except:
+            except Exception:
                 self.sap_columns = []
 
     def process_files(self):
@@ -528,8 +540,9 @@ class SapPriceUpdaterApp:
             cost_value_col = self.column_config['cost_value']
             sap_article_col = self.column_config['sap_article']
             
-            # Load Cost data using handler
-            dfCost, _, _ = load_cost_file(cost_path, cost_article_col, cost_value_col)
+            # Load Cost data using handler (reuse the sheet detected while browsing)
+            dfCost, _, _ = load_cost_file(cost_path, cost_article_col, cost_value_col,
+                                          self.cost_sheet_name)
             
             # Load SAP data from file or use clipboard data
             if self.sap_from_clipboard is not None:
